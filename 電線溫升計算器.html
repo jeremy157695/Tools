@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>電線溫升計算器 (含披覆變數)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .calculator {
+            background-color: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: bold;
+            color: #34495e;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 15px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 17px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .result {
+            margin-top: 25px;
+            padding: 20px;
+            background-color: #e8f4fc;
+            border-radius: 5px;
+            display: none;
+            border-left: 5px solid #3498db;
+        }
+
+        .result h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        .result-item {
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .result-value {
+            font-weight: bold;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-top: 25px;
+            line-height: 1.5;
+        }
+
+        .warning {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .section-title {
+            font-size: 18px;
+            color: #3498db;
+            margin: 25px 0 15px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="calculator">
+        <h1>電線溫升計算器 (含披覆變數)</h1>
+
+        <div class="section-title">基本參數</div>
+        <div class="form-group">
+            <label for="wireType">導體材料:</label>
+            <select id="wireType">
+                <option value="copper">銅 (ρ=1.72×10⁻⁸ Ω·m)</option>
+                <option value="aluminum">鋁 (ρ=2.82×10⁻⁸ Ω·m)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="awg">AWG 線規:</label>
+            <select id="awg">
+                <option value="8">8 AWG</option>
+                <option value="10">10 AWG</option>
+                <option value="12">12 AWG</option>
+                <option value="14" selected>14 AWG</option>
+                <option value="16">16 AWG</option>
+                <option value="18">18 AWG</option>
+                <option value="20">20 AWG</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="length">線材長度 (米):</label>
+            <input type="number" id="length" value="1" min="0.1" step="0.1">
+        </div>
+
+        <div class="form-group">
+            <label for="current">電流 (A):</label>
+            <input type="number" id="current" value="10" min="0.1" step="0.1">
+        </div>
+
+        <div class="section-title">披覆參數</div>
+        <div class="form-group">
+            <label for="insulation">絕緣材料:</label>
+            <select id="insulation">
+                <option value="pvc">PVC (UL1015, 105°C)</option>
+                <option value="xlpe">交聯聚乙烯 (XLPE, 90°C)</option>
+                <option value="silicone">矽膠 (180°C)</option>
+                <option value="teflon">鐵氟龍 (260°C)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="insulationThickness">絕緣厚度 (mm):</label>
+            <input type="number" id="insulationThickness" value="0.8" min="0.1" max="3" step="0.1">
+        </div>
+
+        <div class="form-group">
+            <label for="jacket">外被材料:</label>
+            <select id="jacket" onchange="toggleJacket()">
+                <option value="pvc">PVC</option>
+                <option value="pe">聚乙烯 (PE)</option>
+                <option value="none" selected>無外被</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="jacketThickness">外被厚度 (mm):</label>
+            <input type="number" id="jacketThickness" value="0" min="0" max="2" step="0.1" disabled>
+        </div>
+
+        <div class="section-title">安裝條件</div>
+        <div class="form-group">
+            <label for="bends">180度轉折次數 (僅參考):</label>
+            <input type="number" id="bends" value="0" min="0">
+        </div>
+
+        <div class="form-group">
+            <label for="ambientTemp">環境溫度 (°C):</label>
+            <input type="number" id="ambientTemp" value="70" min="-20" max="50">
+        </div>
+
+        <div class="form-group">
+            <label for="airflow">空氣流動條件:</label>
+            <select id="airflow">
+                <option value="still">靜止空氣 (管道內)</option>
+                <option value="low" selected>低速流動 (開放)</option>
+                <option value="medium">中等流動 (微風)</option>
+                <option value="high">高速流動 (強風)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="bundling">線材捆綁程度:</label>
+            <select id="bundling">
+                <option value="single">單獨佈線</option>
+                <option value="loose">鬆散捆綁 (3-5條)</option>
+                <option value="tight">緊密捆綁 (>5條)</option>
+            </select>
+        </div>
+
+        <button onclick="calculate()">計算溫升</button>
+
+        <div id="result" class="result">
+            <h3>計算結果</h3>
+            <div class="result-item">
+                <span>導體電阻:</span>
+                <span class="result-value" id="resistance"></span>
+            </div>
+            <div class="result-item">
+                <span>功率損耗:</span>
+                <span class="result-value" id="powerLoss"></span>
+            </div>
+            <div class="result-item">
+                <span>散熱效率:</span>
+                <span class="result-value" id="coolingEff"></span>
+            </div>
+            <div class="result-item">
+                <span>溫升:</span>
+                <span class="result-value" id="tempRise"></span>
+            </div>
+            <div class="result-item">
+                <span>導體溫度:</span>
+                <span class="result-value" id="conductorTemp"></span>
+            </div>
+            <div class="result-item">
+                <span>外表面溫度:</span>
+                <span class="result-value" id="surfaceTemp"></span>
+            </div>
+            <div class="result-item">
+                <span>壓降:</span>
+                <span class="result-value" id="voltagedrop"></span>
+            </div>
+            <div id="warning" class="warning" style="margin-top: 15px;"></div>
+        </div>
+
+        <div class="note">
+            <p><strong>注意事項:</strong> 此計算器提供估算值，實際溫升受多種因素影響。計算結果已考慮披覆材料的熱阻特性、安裝條件和環境因素。對於關鍵應用，建議進行實際測量。</p>
+        </div>
+    </div>
+    <script>
+        // 材料参数数据库
+        const materialData = {
+            conductor: {
+                copper: { resistivity: 1.72e-8, tempCoeff: 0.00393 },
+                aluminum: { resistivity: 2.82e-8, tempCoeff: 0.00403 }
+            },
+
+            awg: {
+                '8': { diameter: 3.26, area: 8.37 },
+                '10': { diameter: 2.59, area: 5.26 },
+                '12': { diameter: 2.05, area: 3.31 },
+                '14': { diameter: 1.63, area: 2.08 },
+                '16': { diameter: 1.29, area: 1.31 },
+                '18': { diameter: 1.02, area: 0.823 },
+                '20': { diameter: 0.81, area: 0.519 }
+            },
+
+            insulation: {
+                pvc: { thermalResistivity: 5.0, maxTemp: 105 - 10 },
+                xlpe: { thermalResistivity: 3.5, maxTemp: 90 - 5 },
+                silicone: { thermalResistivity: 1.5, maxTemp: 180 - 10 },
+                teflon: { thermalResistivity: 2.5, maxTemp: 260 - 10 }
+            },
+
+            jacket: {
+                pvc: { thermalResistivity: 5.0 },
+                pe: { thermalResistivity: 3.5 },
+                none: { thermalResistivity: 0 }
+            },
+
+            airflow: {
+                still: 5,
+                low: 10,
+                medium: 15,
+                high: 25
+            },
+
+            bundling: {
+                single: 1.0,
+                loose: 0.7,
+                tight: 0.5
+            }
+        };
+
+        // 切换外被厚度输入框状态
+        function toggleJacket() {
+            const jacket = document.getElementById('jacket').value;
+            const jacketThickness = document.getElementById('jacketThickness');
+            jacketThickness.disabled = jacket === 'none';
+            if (jacket === 'none') {
+                jacketThickness.value = 0;
+            }
+        }
+
+        // 主计算函数
+        function calculate() {
+            // 获取输入值
+            const wireType = document.getElementById('wireType').value;
+            const awg = document.getElementById('awg').value;
+            const length = parseFloat(document.getElementById('length').value);
+            const current = parseFloat(document.getElementById('current').value);
+            const bends = parseInt(document.getElementById('bends').value);
+            const ambientTemp = parseFloat(document.getElementById('ambientTemp').value);
+            const insulation = document.getElementById('insulation').value;
+            const insulationThickness = parseFloat(document.getElementById('insulationThickness').value) / 1000; // 转换为米
+            const jacket = document.getElementById('jacket').value;
+            const jacketThickness = parseFloat(document.getElementById('jacketThickness').value) / 1000; // 转换为米
+            const airflow = document.getElementById('airflow').value;
+            const bundling = document.getElementById('bundling').value;
+
+            // 获取材料参数
+            const conductor = materialData.conductor[wireType];
+            const awgParams = materialData.awg[awg];
+            const insulationParams = materialData.insulation[insulation];
+            const jacketParams = materialData.jacket[jacket];
+            const h = materialData.airflow[airflow] * materialData.bundling[bundling]; // 综合散热系数
+
+            // 1. 计算导体电阻 (20°C时)
+            const R20 = conductor.resistivity * (length) / (awgParams.area * 1e-6) * 1.1;
+
+            // 2. 考虑转折增加的电阻 (每转折增加5%电阻)
+            const R_bend = R20 * (1 + bends * 0.05);
+
+            // 3. 初始温升估算 (假设温升30°C)
+            const T_guess = ambientTemp + 30;
+            const R_hot = R_bend * (1 + conductor.tempCoeff * (T_guess - 20));
+
+            // 4. 计算功率损耗
+            const P = Math.pow(current, 2) * R_hot;
+
+            // 5. 计算绝缘层和外被的热阻
+            const r1 = awgParams.diameter / 2000; // 导体半径(m)
+            const r2 = r1 + insulationThickness;
+            const r3 = r2 + jacketThickness;
+
+            const R_insulation = insulationParams.thermalResistivity * Math.log(r2 / r1) / (2 * Math.PI * length);
+            const R_jacket = jacketParams.thermalResistivity * Math.log(r3 / r2) / (2 * Math.PI * length);
+            const R_thermal = R_insulation + R_jacket;
+
+            // 6. 计算表面积
+            const surfaceArea = 2 * Math.PI * r3 * length;
+
+            // 7. 计算温升 (迭代法)
+            let deltaT = P * (R_thermal + 1 / (h * surfaceArea));
+            let conductorTemp = ambientTemp + deltaT;
+            let R_hot_final = R_bend * (1 + conductor.tempCoeff * (conductorTemp - 20));
+            let P_final = Math.pow(current, 2) * R_hot_final;
+            // 二次迭代提高精度
+            for (let i = 0; i < 3; i++) {
+                R_hot_final = R_bend * (1 + conductor.tempCoeff * (conductorTemp - 20));
+                P_final = Math.pow(current, 2) * R_hot_final;
+                deltaT = P_final * (R_thermal + 1 / (h * surfaceArea));
+                conductorTemp = ambientTemp + deltaT;
+            }
+            // 計算壓降
+            const voltagedrop = R_hot_final * current;
+
+            // 计算表面温度
+            const surfaceTemp = conductorTemp - P_final * R_thermal;
+
+            // 显示结果
+            document.getElementById('resistance').textContent = R_hot_final.toFixed(4) + ' Ω';
+            document.getElementById('powerLoss').textContent = P_final.toFixed(2) + ' W';
+            document.getElementById('coolingEff').textContent = h.toFixed(1) + ' W/m²·K';
+            document.getElementById('tempRise').textContent = deltaT.toFixed(1) + ' °C';
+            document.getElementById('conductorTemp').textContent = conductorTemp.toFixed(1) + ' °C';
+            document.getElementById('surfaceTemp').textContent = surfaceTemp.toFixed(1) + ' °C';
+            document.getElementById('voltagedrop').textContent = voltagedrop.toFixed(2) + ' V';
+            // 检查温度是否超过材料限值
+            const warningElement = document.getElementById('warning');
+            if (conductorTemp > insulationParams.maxTemp) {
+                warningElement.textContent = '警告: 導體温度超過绝缘材料建議工作温度(' + insulationParams.maxTemp + '°C)!';
+                warningElement.style.display = 'block';
+            } else {
+                warningElement.style.display = 'none';
+            }
+            
+            // 显示结果区域
+            document.getElementById('result').style.display = 'block';
+        }
+
+        // 初始化页面
+        document.addEventListener('DOMContentLoaded', function () {
+            toggleJacket();
+        });
+    </script>
+</body>
