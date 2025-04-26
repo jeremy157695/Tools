@@ -167,8 +167,8 @@
         <div class="form-group">
             <label for="jacket">外被材料:</label>
             <select id="jacket" onchange="toggleJacket()">
-                <option value="pvc">PVC</option>
-                <option value="pe">聚乙烯 (PE)</option>
+                <option value="pvc">PVC (熱阻 : 5)</option>
+                <option value="pe">聚乙烯 (PE, 熱阻 : 3.5)</option>
                 <option value="none" selected>無外被</option>
             </select>
         </div>
@@ -180,7 +180,7 @@
 
         <div class="section-title">安裝條件</div>
         <div class="form-group">
-            <label for="bends">180度轉折次數 (僅參考):</label>
+            <label for="bends">180度轉折次數 (僅參考, 每轉折增加5%电阻):</label>
             <input type="number" id="bends" value="0" min="0">
         </div>
 
@@ -192,10 +192,10 @@
         <div class="form-group">
             <label for="airflow">空氣流動條件:</label>
             <select id="airflow">
-                <option value="still">靜止空氣 (管道內)</option>
-                <option value="low" selected>低速流動 (開放)</option>
-                <option value="medium">中等流動 (微風)</option>
-                <option value="high">高速流動 (強風)</option>
+                <option value="still">靜止空氣 (管道內, 係數 : 5)</option>
+                <option value="low" selected>低速流動 (開放, 係數 : 10)</option>
+                <option value="medium">中等流動 (微風, 係數 : 15)</option>
+                <option value="high">高速流動 (強風, 係數 : 20)</option>
             </select>
         </div>
 
@@ -203,8 +203,8 @@
             <label for="bundling">線材捆綁程度:</label>
             <select id="bundling">
                 <option value="single">單獨佈線</option>
-                <option value="loose">鬆散捆綁 (3-5條)</option>
-                <option value="tight">緊密捆綁 (>5條)</option>
+                <option value="loose">鬆散捆綁 (3-5條, 減額 : 0.7)</option>
+                <option value="tight">緊密捆綁 (>5條, 減額 : 0.5)</option>
             </select>
         </div>
 
@@ -266,10 +266,10 @@
             },
 
             insulation: {
-                pvc: { thermalResistivity: 5.0, maxTemp: 105 - 10 },
-                xlpe: { thermalResistivity: 3.5, maxTemp: 90 - 5 },
-                silicone: { thermalResistivity: 1.5, maxTemp: 180 - 10 },
-                teflon: { thermalResistivity: 2.5, maxTemp: 260 - 10 }
+                pvc: { thermalResistivity: 5.0, maxTemp: 105 - 20 },
+                xlpe: { thermalResistivity: 3.5, maxTemp: 90 - 20 },
+                silicone: { thermalResistivity: 1.5, maxTemp: 180 - 20 },
+                teflon: { thermalResistivity: 2.5, maxTemp: 260 - 20 }
             },
 
             jacket: {
