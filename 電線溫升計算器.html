@@ -180,7 +180,7 @@
 
         <div class="section-title">安裝條件</div>
         <div class="form-group">
-            <label for="bends">180度轉折次數 (僅參考, 每轉折增加5%电阻):</label>
+            <label for="bends">180度轉折次數 (僅參考, 每轉折增加20%电阻):</label>
             <input type="number" id="bends" value="0" min="0">
         </div>
 
@@ -328,8 +328,8 @@
             // 1. 计算导体电阻 (20°C时)
             const R20 = conductor.resistivity * (length) / (awgParams.area * 1e-6) * 1.1;
 
-            // 2. 考虑转折增加的电阻 (每转折增加5%电阻)
-            const R_bend = R20 * (1 + bends * 0.05);
+            // 2. 考虑转折增加的电阻 (每转折增加20%电阻)
+            const R_bend = R20 * (1 + bends * 0.20);
 
             // 3. 初始温升估算 (假设温升30°C)
             const T_guess = ambientTemp + 30;
