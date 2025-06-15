@@ -1,160 +1,171 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 
 <head>
-    <meta charset="UTF-8" />
-    <title>地圖點選查詢 GHI + 360度桶型接收能量</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <meta charset="UTF-8">
+    <title>模擬日照強度（純前端）</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jstz@2.1.1/dist/jstz.min.js"></script>
     <style>
-        #map {
-            height: 400px;
-            margin-bottom: 10px;
-        }
-
         body {
-            font-family: Arial, sans-serif;
+            font-family: sans-serif;
             margin: 20px;
         }
 
-        #result {
-            white-space: pre-wrap;
-            background: #f0f0f0;
-            padding: 10px;
-            max-height: 350px;
-            overflow-y: auto;
-            font-family: monospace;
+        #map {
+            height: 400px;
+            margin-bottom: 1em;
+        }
+
+        canvas {
+            max-width: 800px;
         }
     </style>
 </head>
 
 <body>
-    <h2>地圖點選查詢 GHI + 360度桶型接收能量</h2>
-    <p>點選地圖取得緯經度，輸入日期，計算全天 GHI 及垂直360度桶型面接收能量</p>
+    <h2>☀️ 模擬 GHI（垂直面板）- 純前端版</h2>
 
-    <label>日期 (YYYYMMDD)：<input type="text" id="date" value="20240601" /></label>
     <div id="map"></div>
 
-    <div><b>選取位置：</b> 緯度 <span id="lat">-</span>，經度 <span id="lng">-</span></div>
+    <label>選擇日期：<input type="date" id="dateInput"></label>
+    <button onclick="simulate()">模擬</button>
 
-    <button id="btnQuery" disabled>查詢 GHI 與桶型接收能量</button>
+    <p id="totalEnergy"></p>
 
-    <pre id="result"></pre>
+    <canvas id="chart"></canvas>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- 改成表格來放資料 -->
+    <table id="hourlyTable" border="1" style="border-collapse: collapse; max-width:800px; margin-top:1em;">
+        <thead>
+            <tr>
+                <th>時刻</th>
+                <th>GHI (水平面) W/m²</th>
+                <th>桶型垂直面板 W/m²</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- JS 會動態產生資料列 -->
+        </tbody>
+    </table>
+
     <script>
-        // 度轉弧度
-        function deg2rad(deg) { return deg * Math.PI / 180; }
-        // 弧度轉度
-        function rad2deg(rad) { return rad * 180 / Math.PI; }
-
-        // 模擬 GHI 函數（峰值1000 W/m²，6-18點）
-        function estimateGHI(hour) {
-            if (hour < 6 || hour > 18) return 0;
-            return 1000 * Math.sin(Math.PI * (hour - 6) / 12);
-        }
-
-        // 太陽高度角計算，簡化版本（地心太陽位置）
-        // 輸入：緯度, 經度, 日期物件(UTC時間)
-        // 輸出：高度角(度)
-        function solarAltitude(lat, lng, dateObj) {
-            function daysSinceJ2000(date) {
-                const J2000 = new Date(Date.UTC(2000, 0, 1, 12, 0, 0));
-                return (date.getTime() - J2000.getTime()) / 86400000;
-            }
-
-            const D = daysSinceJ2000(dateObj);
-
-            const g = (357.529 + 0.98560028 * D) % 360;
-            const q = (280.459 + 0.98564736 * D) % 360;
-            const L = (q + 1.915 * Math.sin(deg2rad(g)) + 0.020 * Math.sin(2 * deg2rad(g))) % 360;
-            const e = 23.439 - 0.00000036 * D;
-
-            const sinDec = Math.sin(deg2rad(e)) * Math.sin(deg2rad(L));
-            const dec = Math.asin(sinDec);
-
-            // *** 修正時角部分 ***
-            const timezone = Math.round(lng / 15);
-
-            const timeUTC = dateObj.getUTCHours() + dateObj.getUTCMinutes() / 60;
-            const localSolarTime = timeUTC + (lng / 15) - timezone;
-
-            const H = deg2rad(15 * (localSolarTime - 12));
-
-            const latRad = deg2rad(lat);
-
-            const altitude = Math.asin(
-                Math.sin(latRad) * Math.sin(dec) +
-                Math.cos(latRad) * Math.cos(dec) * Math.cos(H)
-            );
-
-            return rad2deg(altitude);
-        }
-
-
-        // 初始化 Leaflet 地圖
-        const map = L.map('map').setView([24.96, 121.46], 13);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-        }).addTo(map);
-
-        let selectedLat = null;
-        let selectedLng = null;
-        let marker = null;
+        let lat = 25.0330, lon = 121.5654;
+        const map = L.map('map').setView([lat, lon], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const marker = L.marker([lat, lon]).addTo(map);
 
         map.on('click', (e) => {
-            selectedLat = e.latlng.lat;
-            selectedLng = e.latlng.lng;
-
-            if (marker) {
-                map.removeLayer(marker);
-            }
-            marker = L.marker([selectedLat, selectedLng]).addTo(map);
-
-            document.getElementById('lat').textContent = selectedLat.toFixed(5);
-            document.getElementById('lng').textContent = selectedLng.toFixed(5);
-
-            document.getElementById('btnQuery').disabled = false;
-            document.getElementById('result').textContent = '';
+            lat = e.latlng.lat;
+            lon = e.latlng.lng;
+            marker.setLatLng(e.latlng);
         });
 
-        document.getElementById('btnQuery').addEventListener('click', () => {
-            const dateStr = document.getElementById('date').value;
-            if (!dateStr.match(/^\d{8}$/)) {
-                alert('日期格式錯誤，請輸入 YYYYMMDD');
-                return;
-            }
-            if (selectedLat === null || selectedLng === null) {
-                alert('請先在地圖上點選位置');
-                return;
-            }
+        document.getElementById("dateInput").valueAsDate = new Date();
 
-            const year = parseInt(dateStr.substr(0, 4));
-            const month = parseInt(dateStr.substr(4, 2)) - 1;
-            const day = parseInt(dateStr.substr(6, 2));
+        function getTimeZoneOffsetInHours(date, lat, lon) {
+            return -date.getTimezoneOffset() / 60;
+        }
 
-            let output = `📅 日期：${dateStr}\n📍 位置：緯度 ${selectedLat.toFixed(5)}，經度 ${selectedLng.toFixed(5)}\n\n`;
-            output += '時刻\tGHI(W/m²)\t太陽高度(°)\t桶型接收(W/m²)\n';
+        function simulate() {
+            const dateStr = document.getElementById("dateInput").value;
+            const localDate = new Date(dateStr);
+            const offsetHours = getTimeZoneOffsetInHours(localDate, lat, lon);
 
-            let totalGHI = 0;
-            let totalBucket = 0;
+            const times = [];
+            const ghi = [];
+            const ghiCylindrical = [];
+            let totalWh = 0;
+            let totalWhCyl = 0;
 
             for (let h = 0; h < 24; h++) {
-                const dateObj = new Date(Date.UTC(year, month, day, h, 0, 0));
-                const ghi = estimateGHI(h);
-                const alt = solarAltitude(selectedLat, selectedLng, dateObj);
-                // 桶型接收用 cos(太陽高度角)
-                const bucketEnergy = ghi > 0 && alt > 0 ? ghi * Math.cos(deg2rad(alt)) : 0;
+                const localHour = h;
+                const utcHour = h - offsetHours;
+                const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
 
-                totalGHI += ghi;
-                totalBucket += bucketEnergy;
+                const pos = SunCalc.getPosition(d, lat, lon);
+                const alt = pos.altitude; // 太陽高度角 (radians)
 
-                output += `${h.toString().padStart(2, '0')}:00\t${ghi.toFixed(1)}\t\t${alt.toFixed(1)}\t\t${bucketEnergy.toFixed(1)}\n`;
+                const MAX_GHI = 1100;
+                const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
+                ghi.push(Math.round(ghiRaw));
+                totalWh += ghiRaw;
+
+                const cosine = Math.max(0, Math.cos(alt));
+                const cylVal = ghiRaw * cosine;
+                ghiCylindrical.push(Math.round(cylVal));
+                totalWhCyl += cylVal;
+
+                times.push(localHour + ':00');
             }
-            output += `\n全天總 GHI：${totalGHI.toFixed(1)} W/m²\n全天桶型接收總量：${totalBucket.toFixed(1)} W/m²\n`;
 
-            document.getElementById('result').textContent = output;
-        });
+            document.getElementById("totalEnergy").innerText =
+                `模擬結果：\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；桶型垂直面板接收 ≈ ${totalWhCyl.toFixed(0)} Wh/m²`;
+
+            // 將資料塞進表格
+            const tbody = document.querySelector('#hourlyTable tbody');
+            tbody.innerHTML = ''; // 清空舊資料
+            for (let i = 0; i < times.length; i++) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="text-align:center;">${times[i]}</td>
+                    <td style="text-align:center;">${ghi[i]}</td>
+                    <td style="text-align:center;">${ghiCylindrical[i]}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+
+            drawChart(times, ghi, ghiCylindrical);
+        }
+
+
+
+
+        let chart;
+        function drawChart(labels, ghiData, verticalData) {
+            const ctx = document.getElementById('chart').getContext('2d');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'GHI (水平面)',
+                            data: ghiData,
+                            borderColor: 'blue',
+                            backgroundColor: 'rgba(0,0,255,0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: '垂直面板接收量',
+                            data: verticalData,
+                            borderColor: 'orange',
+                            backgroundColor: 'rgba(255,165,0,0.2)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'W/m²' } },
+                        x: { title: { display: true, text: '當地時間（小時）' } }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `模擬 GHI 與垂直面板接收量 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+                        }
+                    }
+                }
+            });
+        }
     </script>
 </body>
 
