@@ -38,13 +38,14 @@
 
     <canvas id="chart"></canvas>
 
-    <!-- 改成表格來放資料 -->
     <table id="hourlyTable" border="1" style="border-collapse: collapse; max-width:800px; margin-top:1em;">
         <thead>
             <tr>
                 <th>時刻</th>
                 <th>GHI (水平面) W/m²</th>
                 <th>桶型垂直面板 W/m²</th>
+                <th>太陽仰角 (°)</th>
+                <th>太陽方位角 (°)</th>
             </tr>
         </thead>
         <tbody>
@@ -66,30 +67,24 @@
 
         document.getElementById("dateInput").valueAsDate = new Date();
 
-        function getTimeZoneOffsetInHours(date, lat, lon) {
-            return -date.getTimezoneOffset() / 60;
+        function estimateTimezoneOffset(lon) {
+            return Math.round(lon / 15);
         }
 
         function simulate() {
             const dateStr = document.getElementById("dateInput").value;
             const localDate = new Date(dateStr);
-
-            // 用經度估算時區偏移（小時）
             const tzOffsetHours = estimateTimezoneOffset(lon);
 
-            const times = [];
-            const ghi = [];
-            const ghiCylindrical = [];
-            let totalWh = 0;
-            let totalWhCyl = 0;
+            const times = [], ghi = [], ghiCylindrical = [], altitudes = [], azimuths = [];
+            let totalWh = 0, totalWhCyl = 0;
 
             for (let h = 0; h < 24; h++) {
-                // 用 UTC 時間 = 當地時間 - 偏移
                 const utcHour = h - tzOffsetHours;
                 const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
-
                 const pos = SunCalc.getPosition(d, lat, lon);
-                const alt = pos.altitude;
+                const alt = pos.altitude; // 仰角 (radian)
+                const az = pos.azimuth;   // 方位角 (radian)，從南方為 0，順時針增加
 
                 const MAX_GHI = 1000;
                 const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
@@ -102,6 +97,8 @@
                 totalWhCyl += cylVal;
 
                 times.push(h + ':00');
+                altitudes.push((alt * 180 / Math.PI).toFixed(1));         // 轉成度
+                azimuths.push(((az * 180 / Math.PI + 180) % 360).toFixed(1)); // 修正 az 為 0~360°
             }
 
             document.getElementById("totalEnergy").innerText =
@@ -112,24 +109,20 @@
             for (let i = 0; i < times.length; i++) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-      <td style="text-align:center;">${times[i]}</td>
-      <td style="text-align:center;">${ghi[i]}</td>
-      <td style="text-align:center;">${ghiCylindrical[i]}</td>
-    `;
+                    <td style="text-align:center;">${times[i]}</td>
+                    <td style="text-align:center;">${ghi[i]}</td>
+                    <td style="text-align:center;">${ghiCylindrical[i]}</td>
+                    <td style="text-align:center;">${altitudes[i]}</td>
+                    <td style="text-align:center;">${azimuths[i]}</td>
+                `;
                 tbody.appendChild(tr);
             }
 
-            drawChart(times, ghi, ghiCylindrical);
+            drawChart(times, ghi, ghiCylindrical, altitudes);
         }
-
-        function estimateTimezoneOffset(lon) {
-            return Math.round(lon / 15);
-        }
-
-
 
         let chart;
-        function drawChart(labels, ghiData, verticalData) {
+        function drawChart(labels, ghiData, verticalData, altData) {
             const ctx = document.getElementById('chart').getContext('2d');
             if (chart) chart.destroy();
             chart = new Chart(ctx, {
@@ -143,7 +136,8 @@
                             borderColor: 'blue',
                             backgroundColor: 'rgba(0,0,255,0.1)',
                             tension: 0.4,
-                            fill: true
+                            fill: true,
+                            yAxisID: 'irradiance'
                         },
                         {
                             label: '垂直面板接收量',
@@ -151,20 +145,44 @@
                             borderColor: 'orange',
                             backgroundColor: 'rgba(255,165,0,0.2)',
                             tension: 0.4,
-                            fill: true
+                            fill: true,
+                            yAxisID: 'irradiance'
+                        },
+                        {
+                            label: '太陽仰角 (°)',
+                            data: altData,
+                            borderColor: 'green',
+                            borderDash: [5, 5],
+                            tension: 0.3,
+                            fill: false,
+                            yAxisID: 'angle'
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     scales: {
-                        y: { beginAtZero: true, title: { display: true, text: 'W/m²' } },
-                        x: { title: { display: true, text: '當地時間（小時）' } }
+                        irradiance: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'W/m²' }
+                        },
+                        angle: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { display: true, text: '太陽仰角 (°)' },
+                            grid: { drawOnChartArea: false }
+                        },
+                        x: {
+                            title: { display: true, text: '當地時間（小時）' }
+                        }
                     },
                     plugins: {
                         title: {
                             display: true,
-                            text: `模擬 GHI 與垂直面板接收量 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+                            text: `模擬 GHI 與太陽角度 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
                         }
                     }
                 }
