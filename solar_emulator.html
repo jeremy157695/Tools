@@ -91,7 +91,7 @@
                 const pos = SunCalc.getPosition(d, lat, lon);
                 const alt = pos.altitude;
 
-                const MAX_GHI = 1100;
+                const MAX_GHI = 1000;
                 const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
                 ghi.push(Math.round(ghiRaw));
                 totalWh += ghiRaw;
