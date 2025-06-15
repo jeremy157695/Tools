@@ -48,9 +48,7 @@
                 <th>太陽方位角 (°)</th>
             </tr>
         </thead>
-        <tbody>
-            <!-- JS 會動態產生資料列 -->
-        </tbody>
+        <tbody></tbody>
     </table>
 
     <script>
@@ -58,6 +56,8 @@
         const map = L.map('map').setView([lat, lon], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const marker = L.marker([lat, lon]).addTo(map);
+
+        let sunDirectionLine = null;
 
         map.on('click', (e) => {
             lat = e.latlng.lat;
@@ -83,8 +83,8 @@
                 const utcHour = h - tzOffsetHours;
                 const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
                 const pos = SunCalc.getPosition(d, lat, lon);
-                const alt = pos.altitude; // 仰角 (radian)
-                const az = pos.azimuth;   // 方位角 (radian)，從南方為 0，順時針增加
+                const alt = pos.altitude;
+                const az = pos.azimuth;
 
                 const MAX_GHI = 1000;
                 const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
@@ -97,8 +97,13 @@
                 totalWhCyl += cylVal;
 
                 times.push(h + ':00');
-                altitudes.push((alt * 180 / Math.PI).toFixed(1));         // 轉成度
-                azimuths.push(((az * 180 / Math.PI + 180) % 360).toFixed(1)); // 修正 az 為 0~360°
+                altitudes.push((alt * 180 / Math.PI).toFixed(1));
+                const azDeg = ((az * 180 / Math.PI + 180) % 360).toFixed(1);
+                azimuths.push(azDeg);
+
+                if (h === 12) {
+                    drawSunDirectionArrow(lat, lon, azDeg);
+                }
             }
 
             document.getElementById("totalEnergy").innerText =
@@ -119,6 +124,24 @@
             }
 
             drawChart(times, ghi, ghiCylindrical, altitudes);
+        }
+
+        function drawSunDirectionArrow(lat, lon, azimuthDeg) {
+            const length = 0.5; // 約 50 公里 (縮小地圖時明顯一點)
+            const azRad = azimuthDeg * Math.PI / 180;
+            const destLat = lat + (length * Math.cos(azRad));
+            const destLon = lon + (length * Math.sin(azRad));
+
+            if (sunDirectionLine) {
+                map.removeLayer(sunDirectionLine);
+            }
+
+            sunDirectionLine = L.polyline([[lat, lon], [destLat, destLon]], {
+                color: 'gold',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '5, 5'
+            }).addTo(map);
         }
 
         let chart;
