@@ -69,7 +69,8 @@
         function getTimeZoneOffsetInHours(date, lat, lon) {
             return -date.getTimezoneOffset() / 60;
         }
- function simulate() {
+
+        function simulate() {
             const dateStr = document.getElementById("dateInput").value;
             const localDate = new Date(dateStr);
 
@@ -124,57 +125,6 @@
         function estimateTimezoneOffset(lon) {
             return Math.round(lon / 15);
         }
-        function simulate() {
-            const dateStr = document.getElementById("dateInput").value;
-            const localDate = new Date(dateStr);
-            const offsetHours = getTimeZoneOffsetInHours(localDate, lat, lon);
-
-            const times = [];
-            const ghi = [];
-            const ghiCylindrical = [];
-            let totalWh = 0;
-            let totalWhCyl = 0;
-
-            for (let h = 0; h < 24; h++) {
-                const localHour = h;
-                const utcHour = h - offsetHours;
-                const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
-
-                const pos = SunCalc.getPosition(d, lat, lon);
-                const alt = pos.altitude; // 太陽高度角 (radians)
-
-                const MAX_GHI = 1100;
-                const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
-                ghi.push(Math.round(ghiRaw));
-                totalWh += ghiRaw;
-
-                const cosine = Math.max(0, Math.cos(alt));
-                const cylVal = ghiRaw * cosine;
-                ghiCylindrical.push(Math.round(cylVal));
-                totalWhCyl += cylVal;
-
-                times.push(localHour + ':00');
-            }
-
-            document.getElementById("totalEnergy").innerText =
-                `模擬結果：\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；桶型垂直面板接收 ≈ ${totalWhCyl.toFixed(0)} Wh/m²`;
-
-            // 將資料塞進表格
-            const tbody = document.querySelector('#hourlyTable tbody');
-            tbody.innerHTML = ''; // 清空舊資料
-            for (let i = 0; i < times.length; i++) {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td style="text-align:center;">${times[i]}</td>
-                    <td style="text-align:center;">${ghi[i]}</td>
-                    <td style="text-align:center;">${ghiCylindrical[i]}</td>
-                `;
-                tbody.appendChild(tr);
-            }
-
-            drawChart(times, ghi, ghiCylindrical);
-        }
-
 
 
 
