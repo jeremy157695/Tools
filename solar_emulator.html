@@ -8,7 +8,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jstz@2.1.1/dist/jstz.min.js"></script>
     <style>
         body {
             font-family: sans-serif;
@@ -27,11 +26,13 @@
 </head>
 
 <body>
-    <h2>☀️ 模擬 GHI（垂直面板）</h2>
+    <h2>☀️ 模擬 GHI（垂直面板，指定方位）</h2>
 
     <div id="map"></div>
 
     <label>選擇日期：<input type="date" id="dateInput"></label>
+    <label style="margin-left:1em;">垂直面板方位角（°，0=北，90=東，180=南...）：<input type="number" id="panelAzimuth" value="180"
+            min="0" max="359"></label>
     <button onclick="simulate()">模擬</button>
 
     <p id="totalEnergy"></p>
@@ -43,7 +44,7 @@
             <tr>
                 <th>時刻</th>
                 <th>GHI (水平面) W/m²</th>
-                <th>桶型垂直面板 W/m²</th>
+                <th>垂直面板 W/m²</th>
                 <th>太陽仰角 (°)</th>
                 <th>太陽方位角 (°)</th>
             </tr>
@@ -56,8 +57,6 @@
         const map = L.map('map').setView([lat, lon], 6);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         const marker = L.marker([lat, lon]).addTo(map);
-
-        let sunDirectionLine = null;
 
         map.on('click', (e) => {
             lat = e.latlng.lat;
@@ -73,79 +72,62 @@
 
         function simulate() {
             const dateStr = document.getElementById("dateInput").value;
+            const panelAzimuthDeg = parseFloat(document.getElementById("panelAzimuth").value) || 0;
             const localDate = new Date(dateStr);
             const tzOffsetHours = estimateTimezoneOffset(lon);
 
-            const times = [], ghi = [], ghiCylindrical = [], altitudes = [], azimuths = [];
-            let totalWh = 0, totalWhCyl = 0;
+            const times = [], ghi = [], panelData = [], altitudes = [], azimuths = [];
+            let totalWh = 0, totalWhPanel = 0;
 
             for (let h = 0; h < 24; h++) {
                 const utcHour = h - tzOffsetHours;
                 const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
                 const pos = SunCalc.getPosition(d, lat, lon);
-                const alt = pos.altitude;
-                const az = pos.azimuth;
+                const alt = pos.altitude;  // radians
+                const az = pos.azimuth;    // radians from south (-π to π), convert to compass
+                const azDeg = ((az * 180 / Math.PI + 180) % 360);
 
                 const MAX_GHI = 1000;
                 const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
                 ghi.push(Math.round(ghiRaw));
                 totalWh += ghiRaw;
 
-                const cosine = Math.max(0, Math.cos(alt));
-                const cylVal = ghiRaw * cosine;
-                ghiCylindrical.push(Math.round(cylVal));
-                totalWhCyl += cylVal;
+                // 面板入射角餘弦：垂直面板朝向與太陽方位角的差
+                const angleDiff = Math.abs(panelAzimuthDeg - azDeg);
+                const angleRad = angleDiff * Math.PI / 180;
+                const incidentCosine = Math.max(0, Math.sin(alt) * Math.cos(angleRad)); // 垂直面板接收量
+
+                const panelVal = ghiRaw * incidentCosine;
+                panelData.push(Math.round(panelVal));
+                totalWhPanel += panelVal;
 
                 times.push(h + ':00');
                 altitudes.push((alt * 180 / Math.PI).toFixed(1));
-                const azDeg = ((az * 180 / Math.PI + 180) % 360).toFixed(1);
-                azimuths.push(azDeg);
-
-                if (h === 12) {
-                    drawSunDirectionArrow(lat, lon, azDeg);
-                }
+                azimuths.push(azDeg.toFixed(1));
             }
 
             document.getElementById("totalEnergy").innerText =
-                `模擬結果：\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；桶型垂直面板接收 ≈ ${totalWhCyl.toFixed(0)} Wh/m²`;
+                `模擬結果：\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；指定方位垂直面板接收 ≈ ${totalWhPanel.toFixed(0)} Wh/m²`;
 
             const tbody = document.querySelector('#hourlyTable tbody');
             tbody.innerHTML = '';
             for (let i = 0; i < times.length; i++) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td style="text-align:center;">${times[i]}</td>
-                    <td style="text-align:center;">${ghi[i]}</td>
-                    <td style="text-align:center;">${ghiCylindrical[i]}</td>
-                    <td style="text-align:center;">${altitudes[i]}</td>
-                    <td style="text-align:center;">${azimuths[i]}</td>
-                `;
+            <td style="text-align:center;">${times[i]}</td>
+            <td style="text-align:center;">${ghi[i]}</td>
+            <td style="text-align:center;">${panelData[i]}</td>
+            <td style="text-align:center;">${altitudes[i]}</td>
+            <td style="text-align:center;">${azimuths[i]}</td>
+        `;
                 tbody.appendChild(tr);
             }
 
-            drawChart(times, ghi, ghiCylindrical, altitudes);
-        }
-
-        function drawSunDirectionArrow(lat, lon, azimuthDeg) {
-            const length = 0.5; // 約 50 公里 (縮小地圖時明顯一點)
-            const azRad = azimuthDeg * Math.PI / 180;
-            const destLat = lat + (length * Math.cos(azRad));
-            const destLon = lon + (length * Math.sin(azRad));
-
-            if (sunDirectionLine) {
-                map.removeLayer(sunDirectionLine);
-            }
-
-            sunDirectionLine = L.polyline([[lat, lon], [destLat, destLon]], {
-                color: 'gold',
-                weight: 4,
-                opacity: 0.8,
-                dashArray: '5, 5'
-            }).addTo(map);
+            drawChart(times, ghi, panelData, altitudes, panelAzimuthDeg);
         }
 
         let chart;
-        function drawChart(labels, ghiData, verticalData, altData) {
+        function drawChart(labels, ghiData, panelData, altData, panelAz) {
             const ctx = document.getElementById('chart').getContext('2d');
             if (chart) chart.destroy();
             chart = new Chart(ctx, {
@@ -163,8 +145,8 @@
                             yAxisID: 'irradiance'
                         },
                         {
-                            label: '垂直面板接收量',
-                            data: verticalData,
+                            label: `垂直面板接收（${panelAz}°）`,
+                            data: panelData,
                             borderColor: 'orange',
                             backgroundColor: 'rgba(255,165,0,0.2)',
                             tension: 0.4,
@@ -205,7 +187,7 @@
                     plugins: {
                         title: {
                             display: true,
-                            text: `模擬 GHI 與太陽角度 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+                            text: `模擬 GHI 與面板接收量 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
                         }
                     }
                 }
