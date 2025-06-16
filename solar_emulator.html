@@ -95,8 +95,16 @@
                 // 面板入射角餘弦：垂直面板朝向與太陽方位角的差
                 const azimuthDiffDeg = ((azDeg - panelAzimuthDeg + 540) % 360) - 180; // 範圍在 -180~180
                 const azimuthDiffRad = azimuthDiffDeg * Math.PI / 180;
-                const incidentCosine = Math.max(0, Math.sin(alt) * Math.cos(azimuthDiffRad));
-
+                const azRad = azDeg * Math.PI / 180;
+                const panelAzRad = panelAzimuthDeg * Math.PI / 180;
+                
+                const sunX = Math.cos(alt) * Math.sin(azRad);
+                const sunY = Math.cos(alt) * Math.cos(azRad);
+                
+                const panelX = Math.sin(panelAzRad);
+                const panelY = Math.cos(panelAzRad);
+                
+                const incidentCosine = Math.max(0, sunX * panelX + sunY * panelY);
 
                 const panelVal = ghiRaw * incidentCosine;
                 panelData.push(Math.round(panelVal));
