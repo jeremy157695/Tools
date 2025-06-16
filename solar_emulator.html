@@ -85,7 +85,7 @@
                 const pos = SunCalc.getPosition(d, lat, lon);
                 const alt = pos.altitude;  // radians
                 const az = pos.azimuth;    // radians from south (-π to π), convert to compass
-                const azDeg = ((az * 180 / Math.PI + 180) % 360);
+                const azDeg = (az * 180 / Math.PI + 360 + 180) % 360;
 
                 const MAX_GHI = 1000;
                 const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
