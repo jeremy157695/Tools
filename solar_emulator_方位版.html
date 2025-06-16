@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>模擬日照強度</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        #map {
+            height: 400px;
+            margin-bottom: 1em;
+        }
+
+        canvas {
+            max-width: 800px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>☀️ 模擬 GHI（垂直面板，指定方位）</h2>
+
+    <div id="map"></div>
+
+    <label>選擇日期：<input type="date" id="dateInput"></label>
+    <label style="margin-left:1em;">垂直面板方位角（°，0=北，90=東，180=南...）：<input type="number" id="panelAzimuth" value="180"
+            min="0" max="359"></label>
+    <button onclick="simulate()">模擬</button>
+
+    <p id="totalEnergy"></p>
+
+    <canvas id="chart"></canvas>
+
+    <table id="hourlyTable" border="1" style="border-collapse: collapse; max-width:800px; margin-top:1em;">
+        <thead>
+            <tr>
+                <th>時刻</th>
+                <th>GHI (水平面) W/m²</th>
+                <th>垂直面板 W/m²</th>
+                <th>太陽仰角 (°)</th>
+                <th>太陽方位角 (°)</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <!-- ... 省略 head 一樣 ... -->
+
+    <script>
+        let lat = 25.0330, lon = 121.5654, elevation = 0;
+        const map = L.map('map').setView([lat, lon], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const marker = L.marker([lat, lon]).addTo(map);
+
+        map.on('click', (e) => {
+            lat = e.latlng.lat;
+            lon = e.latlng.lng;
+            marker.setLatLng(e.latlng);
+            getElevation(lat, lon, simulate);
+        });
+
+        document.getElementById("dateInput").valueAsDate = new Date();
+
+        function estimateTimezoneOffset(lon) {
+            return Math.round(lon / 15);
+        }
+
+        function getElevation(lat, lon, callback) {
+            fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`)
+                .then(response => response.json())
+                .then(data => {
+                    elevation = data.results[0].elevation || 0;
+                    console.log(`查詢標高：${elevation} 公尺`);
+                    callback();
+                })
+                .catch(err => {
+                    console.warn("查詢標高失敗，預設 elevation = 0");
+                    elevation = 0;
+                    callback();
+                });
+        }
+
+        function simulate() {
+            const dateStr = document.getElementById("dateInput").value;
+            const panelAzimuthDeg = parseFloat(document.getElementById("panelAzimuth").value) || 0;
+            const localDate = new Date(dateStr);
+            const tzOffsetHours = estimateTimezoneOffset(lon);
+
+            const times = [], ghi = [], panelData = [], altitudes = [], azimuths = [];
+            let totalWh = 0, totalWhPanel = 0;
+
+            // 根據海拔修正最大 GHI
+            const MAX_GHI = 1000 * (1 + 0.08 * (elevation / 1000));  // 每 1000m 增加約 8%
+            console.log(`修正後 MAX_GHI ≈ ${MAX_GHI.toFixed(0)} W/m²`);
+
+            for (let h = 0; h < 24; h++) {
+                const utcHour = h - tzOffsetHours;
+                const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
+                const pos = SunCalc.getPosition(d, lat, lon);
+                const alt = pos.altitude;
+                const az = pos.azimuth;
+                const azDeg = (az * 180 / Math.PI + 360 + 180) % 360;
+
+                const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
+                ghi.push(Math.round(ghiRaw));
+                totalWh += ghiRaw;
+
+                const azimuthDiffDeg = ((azDeg - panelAzimuthDeg + 540) % 360) - 180;
+                const azimuthDiffRad = azimuthDiffDeg * Math.PI / 180;
+                const azRad = azDeg * Math.PI / 180;
+                const panelAzRad = panelAzimuthDeg * Math.PI / 180;
+
+                const sunX = Math.cos(alt) * Math.sin(azRad);
+                const sunY = Math.cos(alt) * Math.cos(azRad);
+                const panelX = Math.sin(panelAzRad);
+                const panelY = Math.cos(panelAzRad);
+                const incidentCosine = Math.max(0, sunX * panelX + sunY * panelY);
+
+                const panelVal = ghiRaw * incidentCosine;
+                panelData.push(Math.round(panelVal));
+                totalWhPanel += panelVal;
+
+                times.push(h + ':00');
+                altitudes.push((alt * 180 / Math.PI).toFixed(1));
+                azimuths.push(azDeg.toFixed(1));
+            }
+
+            document.getElementById("totalEnergy").innerText =
+                `模擬結果：\n標高 ${elevation} 公尺，MAX_GHI ≈ ${MAX_GHI.toFixed(0)} W/m²\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；指定方位垂直面板接收 ≈ ${totalWhPanel.toFixed(0)} Wh/m²`;
+
+            const tbody = document.querySelector('#hourlyTable tbody');
+            tbody.innerHTML = '';
+            for (let i = 0; i < times.length; i++) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+        <td style="text-align:center;">${times[i]}</td>
+        <td style="text-align:center;">${ghi[i]}</td>
+        <td style="text-align:center;">${panelData[i]}</td>
+        <td style="text-align:center;">${altitudes[i]}</td>
+        <td style="text-align:center;">${azimuths[i]}</td>`;
+                tbody.appendChild(tr);
+            }
+
+            drawChart(times, ghi, panelData, altitudes, panelAzimuthDeg);
+        }
+
+        let chart;
+        function drawChart(labels, ghiData, panelData, altData, panelAz) {
+            const ctx = document.getElementById('chart').getContext('2d');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'GHI (水平面)',
+                            data: ghiData,
+                            borderColor: 'blue',
+                            backgroundColor: 'rgba(0,0,255,0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'irradiance'
+                        },
+                        {
+                            label: `垂直面板接收（${panelAz}°）`,
+                            data: panelData,
+                            borderColor: 'orange',
+                            backgroundColor: 'rgba(255,165,0,0.2)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'irradiance'
+                        },
+                        {
+                            label: '太陽仰角 (°)',
+                            data: altData,
+                            borderColor: 'green',
+                            borderDash: [5, 5],
+                            tension: 0.3,
+                            fill: false,
+                            yAxisID: 'angle'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        irradiance: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'W/m²' }
+                        },
+                        angle: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { display: true, text: '太陽仰角 (°)' },
+                            grid: { drawOnChartArea: false }
+                        },
+                        x: {
+                            title: { display: true, text: '當地時間（小時）' }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `模擬 GHI 與面板接收量 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+                        }
+                    }
+                }
+            });
+        }
+
+        // 初始查詢海拔並模擬
+        getElevation(lat, lon, simulate);
+    </script>
+
+</body>
+
+</html>

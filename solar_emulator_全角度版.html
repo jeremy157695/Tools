@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <title>模擬日照強度</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/suncalc@1.9.0/suncalc.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jstz@2.1.1/dist/jstz.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        #map {
+            height: 400px;
+            margin-bottom: 1em;
+        }
+
+        canvas {
+            max-width: 800px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>☀️ 模擬 GHI（垂直面板）</h2>
+
+    <div id="map"></div>
+    <p id="elevationInfo">標高：查詢中...</p>
+
+    <label>選擇日期：<input type="date" id="dateInput"></label>
+    <button onclick="simulate()">模擬</button>
+
+    <p id="totalEnergy"></p>
+
+    <canvas id="chart"></canvas>
+
+    <table id="hourlyTable" border="1" style="border-collapse: collapse; max-width:800px; margin-top:1em;">
+        <thead>
+            <tr>
+                <th>時刻</th>
+                <th>GHI (水平面) W/m²</th>
+                <th>桶型垂直面板 W/m²</th>
+                <th>太陽仰角 (°)</th>
+                <th>太陽方位角 (°)</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        let lat = 25.0330, lon = 121.5654;
+        let elevation = 0;
+
+        const map = L.map('map').setView([lat, lon], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        const marker = L.marker([lat, lon]).addTo(map);
+
+        let sunDirectionLine = null;
+
+        async function fetchElevation(lat, lon) {
+            document.getElementById("elevationInfo").innerText = "標高：查詢中...";
+            try {
+                const res = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`);
+                const data = await res.json();
+                elevation = data.results[0].elevation;
+                document.getElementById("elevationInfo").innerText = `標高：約 ${elevation} 公尺`;
+            } catch {
+                elevation = 0;
+                document.getElementById("elevationInfo").innerText = "標高查詢失敗";
+            }
+        }
+
+        map.on('click', async (e) => {
+            lat = e.latlng.lat;
+            lon = e.latlng.lng;
+            marker.setLatLng(e.latlng);
+            await fetchElevation(lat, lon);
+        });
+
+        document.getElementById("dateInput").valueAsDate = new Date();
+        fetchElevation(lat, lon);  // 初始標高
+
+        function estimateTimezoneOffset(lon) {
+            return Math.round(lon / 15);
+        }
+
+        function simulate() {
+            const dateStr = document.getElementById("dateInput").value;
+            const localDate = new Date(dateStr);
+            const tzOffsetHours = estimateTimezoneOffset(lon);
+
+            const times = [], ghi = [], ghiCylindrical = [], altitudes = [], azimuths = [];
+            let totalWh = 0, totalWhCyl = 0;
+
+            // 調整最大 GHI 根據標高（每 8000 公尺大約 +100%）簡化模型
+            const pressureFactor = 1 + elevation / 8000;
+            const MAX_GHI = 1000 * pressureFactor;
+
+            for (let h = 0; h < 24; h++) {
+                const utcHour = h - tzOffsetHours;
+                const d = new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate(), utcHour));
+                const pos = SunCalc.getPosition(d, lat, lon);
+                const alt = pos.altitude;
+                const az = pos.azimuth;
+
+                const ghiRaw = Math.max(0, Math.sin(alt)) * MAX_GHI;
+                ghi.push(Math.round(ghiRaw));
+                totalWh += ghiRaw;
+
+                const cosine = Math.max(0, Math.cos(alt));
+                const cylVal = ghiRaw * cosine;
+                ghiCylindrical.push(Math.round(cylVal));
+                totalWhCyl += cylVal;
+
+                times.push(h + ':00');
+                altitudes.push((alt * 180 / Math.PI).toFixed(1));
+                const azDeg = ((az * 180 / Math.PI + 180) % 360).toFixed(1);
+                azimuths.push(azDeg);
+
+                if (h === 12) {
+                    drawSunDirectionArrow(lat, lon, azDeg);
+                }
+            }
+
+            document.getElementById("totalEnergy").innerText =
+                `模擬結果：\n總 GHI ≈ ${totalWh.toFixed(0)} Wh/m²；桶型垂直面板接收 ≈ ${totalWhCyl.toFixed(0)} Wh/m²`;
+
+            const tbody = document.querySelector('#hourlyTable tbody');
+            tbody.innerHTML = '';
+            for (let i = 0; i < times.length; i++) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td style="text-align:center;">${times[i]}</td>
+                    <td style="text-align:center;">${ghi[i]}</td>
+                    <td style="text-align:center;">${ghiCylindrical[i]}</td>
+                    <td style="text-align:center;">${altitudes[i]}</td>
+                    <td style="text-align:center;">${azimuths[i]}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+
+            drawChart(times, ghi, ghiCylindrical, altitudes);
+        }
+
+        function drawSunDirectionArrow(lat, lon, azimuthDeg) {
+            const length = 0.5;
+            const azRad = azimuthDeg * Math.PI / 180;
+            const destLat = lat + (length * Math.cos(azRad));
+            const destLon = lon + (length * Math.sin(azRad));
+
+            if (sunDirectionLine) {
+                map.removeLayer(sunDirectionLine);
+            }
+
+            sunDirectionLine = L.polyline([[lat, lon], [destLat, destLon]], {
+                color: 'gold',
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '5, 5'
+            }).addTo(map);
+        }
+
+        let chart;
+        function drawChart(labels, ghiData, verticalData, altData) {
+            const ctx = document.getElementById('chart').getContext('2d');
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'GHI (水平面)',
+                            data: ghiData,
+                            borderColor: 'blue',
+                            backgroundColor: 'rgba(0,0,255,0.1)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'irradiance'
+                        },
+                        {
+                            label: '垂直面板接收量',
+                            data: verticalData,
+                            borderColor: 'orange',
+                            backgroundColor: 'rgba(255,165,0,0.2)',
+                            tension: 0.4,
+                            fill: true,
+                            yAxisID: 'irradiance'
+                        },
+                        {
+                            label: '太陽仰角 (°)',
+                            data: altData,
+                            borderColor: 'green',
+                            borderDash: [5, 5],
+                            tension: 0.3,
+                            fill: false,
+                            yAxisID: 'angle'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        irradiance: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'W/m²' }
+                        },
+                        angle: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { display: true, text: '太陽仰角 (°)' },
+                            grid: { drawOnChartArea: false }
+                        },
+                        x: {
+                            title: { display: true, text: '當地時間（小時）' }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `模擬 GHI 與太陽角度 @ (${lat.toFixed(4)}, ${lon.toFixed(4)})`
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
