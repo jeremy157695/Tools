@@ -95,7 +95,8 @@
                 // 面板入射角餘弦：垂直面板朝向與太陽方位角的差
                 const angleDiff = Math.abs(panelAzimuthDeg - azDeg);
                 const angleRad = angleDiff * Math.PI / 180;
-                const incidentCosine = Math.max(0, Math.sin(alt) * Math.cos(angleRad)); // 垂直面板接收量
+                const incidentCosine = Math.max(0, Math.cos(angleRad) * Math.cos(alt)); // ✅ 正確垂直面板入射
+
 
                 const panelVal = ghiRaw * incidentCosine;
                 panelData.push(Math.round(panelVal));
