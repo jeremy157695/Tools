@@ -93,9 +93,9 @@
                 totalWh += ghiRaw;
 
                 // 面板入射角餘弦：垂直面板朝向與太陽方位角的差
-                const angleDiff = Math.abs(panelAzimuthDeg - azDeg);
-                const angleRad = angleDiff * Math.PI / 180;
-                const incidentCosine = Math.max(0, Math.cos(angleRad) * Math.cos(alt)); // ✅ 正確垂直面板入射
+                const azimuthDiffDeg = ((azDeg - panelAzimuthDeg + 540) % 360) - 180; // 範圍在 -180~180
+                const azimuthDiffRad = azimuthDiffDeg * Math.PI / 180;
+                const incidentCosine = Math.max(0, Math.sin(alt) * Math.cos(azimuthDiffRad));
 
 
                 const panelVal = ghiRaw * incidentCosine;
