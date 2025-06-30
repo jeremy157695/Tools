@@ -36,6 +36,7 @@
       <div class="mt-4 text-gray-800">
         <p id="dailyResult">每日耗電量：-- Wh</p>
         <p id="monthlyResult">每月估算耗電量：約 -- 度 (kWh)</p>
+        <p id="yearlyResult">每年估算耗電量：約 -- 度 (kWh)</p>
       </div>
     </div>
   </div>
@@ -49,9 +50,10 @@
 
       const dailyWh = (dayHours * dayPower) + (nightHours * nightPower);
       const monthlyKWh = (dailyWh * 30 / 1000).toFixed(2);
-
+      const yearlyKWh = (dailyWh * 365 / 1000).toFixed(2);
       document.getElementById("dailyResult").textContent = `每日耗電量：${dailyWh.toFixed(1)} Wh`;
       document.getElementById("monthlyResult").textContent = `每月估算耗電量：約 ${monthlyKWh} 度 (kWh)`;
+      document.getElementById("yearlyResult").textContent = `每年估算耗電量：約 ${yearlyKWh} 度 (kWh)`;
     }
   </script>
 </body>
