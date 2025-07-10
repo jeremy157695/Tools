@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>LED 長期壽命預估工具 - 對數時間軸亮度曲線</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 40px;
+            max-width: 800px;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: 6px;
+            margin: 6px 0;
+        }
+
+        button {
+            width: auto;
+            margin-right: 10px;
+        }
+
+        .result {
+            margin-top: 20px;
+            font-size: 18px;
+            color: green;
+            line-height: 1.6;
+        }
+
+        canvas {
+            margin-top: 30px;
+            max-width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>LED 長期壽命預估</h1>
+
+    <label>短期壽命測試時數 (hrs)：</label>
+    <input type="number" id="lifeTestHours" placeholder="例如：1000" value="1000" />
+
+    <label>短期測試電流 (mA)：</label>
+    <input type="number" id="I_test" placeholder="例如：350" value="350" />
+
+    <label>短期測試溫度 (°C)：</label>
+    <input type="number" id="T_test" placeholder="例如：65" value="65"/>
+
+    <h3>使用時段 A（白天）</h3>
+    <label>使用電流 (mA)：</label>
+    <input type="number" id="I_A" placeholder="例如：120" value="120"/>
+    <label>每日使用時數：</label>
+    <input type="number" id="H_A" placeholder="例如：10" value="10"/>
+
+    <h3>使用時段 B（夜間）</h3>
+    <label>使用電流 (mA)：</label>
+    <input type="number" id="I_B" placeholder="例如：20" value="20" />
+    <label>每日使用時數：</label>
+    <input type="number" id="H_B" placeholder="例如：14" value="14"/>
+
+    <label>實際環境溫度 (°C)：</label>
+    <input type="number" id="T_use" placeholder="例如：85" value="85"/>
+
+    <button onclick="estimateLifetime()">預估長期壽命</button>
+    <button onclick="exportCSV()">匯出結果 (CSV)</button>
+    <button onclick="exportBrightnessCSV()">匯出衰減曲線數值 (CSV)</button>
+
+    <div class="result" id="result"></div>
+
+    <canvas id="lifeChart" height="300"></canvas>
+    <canvas id="brightnessChart" height="300"></canvas>
+
+    <script>
+        let predictedLife = 0;
+        let chart = null;
+        let brightChart = null;
+
+        // 衰減模型改用 exp(-(t/tau)^2)
+        function brightnessExpSquared(t, tau) {
+            return 100 * Math.exp(-Math.pow(t / tau, 2));
+        }
+
+        function estimateLifetime() {
+            const lifeTestHours = parseFloat(document.getElementById("lifeTestHours").value);
+            const I_test = parseFloat(document.getElementById("I_test").value);
+            const T_test = parseFloat(document.getElementById("T_test").value) + 273.15;
+
+            const I_A = parseFloat(document.getElementById("I_A").value);
+            const H_A = parseFloat(document.getElementById("H_A").value);
+
+            const I_B = parseFloat(document.getElementById("I_B").value);
+            const H_B = parseFloat(document.getElementById("H_B").value);
+
+            const T_use = parseFloat(document.getElementById("T_use").value) + 273.15;
+
+            // 參數
+            const Ea = 0.7; // eV
+            const k = 8.617e-5; // eV/K
+            const n = 2; // 電流加速因子
+
+            // 溫度與電流加速因子（修正溫度順序）
+            const AF_T = Math.exp((Ea / k) * (1 / T_use - 1 / T_test));
+            const AF_I_A = Math.pow(I_test / I_A, n);
+            const AF_I_B = Math.pow(I_test / I_B, n);
+
+            const AF_A = AF_T * AF_I_A;
+            const AF_B = AF_T * AF_I_B;
+
+            // 計算時段壽命（小時）
+            const life_A = lifeTestHours * AF_A;
+            const life_B = lifeTestHours * AF_B;
+
+            // 加權平均壽命
+            const totalLife = (life_A * H_A + life_B * H_B) / (H_A + H_B);
+            predictedLife = totalLife;
+
+            // tau 計算 (L70對應)
+            const tau = totalLife / 0.56;
+
+            // Lx 壽命計算函式
+            function calcLifeAtBrightness(Lx) {
+                return tau * Math.sqrt(-Math.log(Lx / 100));
+            }
+
+            const L90 = calcLifeAtBrightness(90);
+            const L80 = calcLifeAtBrightness(80);
+            const L70 = calcLifeAtBrightness(70);
+
+            document.getElementById("result").innerHTML =
+                `預估長期壽命 (L70)：<strong>${totalLife.toFixed(0)}</strong> 小時<br>` +
+                `L90 壽命（亮度90%）：<strong>${L90.toFixed(0)}</strong> 小時<br>` +
+                `L80 壽命（亮度80%）：<strong>${L80.toFixed(0)}</strong> 小時<br>` +
+                `L70 壽命（亮度70%）：<strong>${L70.toFixed(0)}</strong> 小時`;
+
+            renderBarChart(life_A, life_B, totalLife);
+            renderBrightnessCurve(totalLife);
+        }
+
+        function renderBarChart(lifeA, lifeB, totalLife) {
+            const ctx = document.getElementById("lifeChart").getContext("2d");
+
+            if (chart) chart.destroy();
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['時段 A 預估壽命', '時段 B 預估壽命', '加權平均壽命'],
+                    datasets: [{
+                        label: 'LED 預估壽命 (小時)',
+                        data: [lifeA, lifeB, totalLife],
+                        backgroundColor: ['#4caf50', '#2196f3', '#ff9800']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        function renderBrightnessCurve(life) {
+            const ctx = document.getElementById("brightnessChart").getContext("2d");
+
+            // 調整 tau 使 L70 = life
+            const tau = life / 0.56;
+
+            const maxTime = life * 1.5;
+            const step = maxTime / 100;
+            const labels = [];
+            const data = [];
+
+            for (let t = 1; t <= maxTime; t += step) {
+                labels.push(t.toFixed(0));
+                data.push(brightnessExpSquared(t, tau).toFixed(2));
+            }
+
+            if (brightChart) brightChart.destroy();
+            brightChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'LED 亮度 (%)',
+                        data: data,
+                        borderColor: 'orange',
+                        backgroundColor: 'rgba(255,165,0,0.2)',
+                        fill: true,
+                        tension: 0.2,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            min: 0,
+                            max: 110,
+                            title: { display: true, text: '亮度 (%)' }
+                        },
+                        x: {
+                            type: 'logarithmic',
+                            title: { display: true, text: '時間 (小時，對數尺度)' },
+                            ticks: {
+                                callback: function (value) {
+                                    return Number(value).toLocaleString();
+                                }
+                            },
+                            min: 1
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'LED 亮度衰退曲線（對數時間軸）'
+                        }
+                    }
+                }
+            });
+        }
+
+        function exportCSV() {
+            if (!predictedLife || predictedLife <= 0) {
+                alert("請先預估長期壽命，再匯出結果。");
+                return;
+            }
+
+            const tau = predictedLife / 0.56;
+            function calcLifeAtBrightness(Lx) {
+                return tau * Math.sqrt(-Math.log(Lx / 100));
+            }
+            const L90 = calcLifeAtBrightness(90);
+            const L80 = calcLifeAtBrightness(80);
+            const L70 = calcLifeAtBrightness(70);
+
+            const rows = [
+                ['項目', '數值(小時)'],
+                ['預估壽命 (L70)', predictedLife.toFixed(0)],
+                ['L90 壽命 (亮度90%)', L90.toFixed(0)],
+                ['L80 壽命 (亮度80%)', L80.toFixed(0)],
+                ['L70 壽命 (亮度70%)', L70.toFixed(0)],
+            ];
+
+            const csvContent = rows.map(e => e.join(",")).join("\n");
+            const bom = "\uFEFF";
+            const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "LED_lifetime_estimation.csv";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+
+        function exportBrightnessCSV() {
+            if (!predictedLife || predictedLife <= 0) {
+                alert("請先預估長期壽命，才能匯出亮度曲線數值！");
+                return;
+            }
+
+            const tau = predictedLife / 0.56;
+            const maxTime = predictedLife * 1.5;
+            const step = maxTime / 100;
+
+            const rows = [["時間(小時)", "亮度(%)"]];
+
+            for (let t = 1; t <= maxTime; t += step) {
+                const brightness = 100 * Math.exp(-Math.pow(t / tau, 2));
+                rows.push([t.toFixed(0), brightness.toFixed(2)]);
+            }
+
+            const csvContent = rows.map(r => r.join(",")).join("\n");
+
+            // 加入 UTF-8 BOM
+            const bom = "\uFEFF";
+
+            const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "LED_brightness_decay_curve.csv";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+
+</html>
