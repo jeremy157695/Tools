@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>Lab 轉反射率計算器</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        input { margin: 5px; padding: 5px; width: 80px; }
+        button { padding: 8px 12px; }
+        .result { margin-top: 20px; font-size: 18px; }
+    </style>
+</head>
+<body>
+
+<h2>Lab → 反射率計算</h2>
+
+<label>L*: <input type="number" id="L" value="22"></label><br>
+<label>a*: <input type="number" id="a" step="0.01" value="0.51"></label><br>
+<label>b*: <input type="number" id="b" step="0.01" value="0.27"></label><br>
+
+<button onclick="calculate()">計算</button>
+
+<div class="result" id="output"></div>
+
+<script>
+function calculate() {
+    let L = parseFloat(document.getElementById('L').value);
+    let a = parseFloat(document.getElementById('a').value);
+    let b = parseFloat(document.getElementById('b').value);
+
+    const delta = 6/29;
+
+    let fy = (L + 16) / 116;
+    let fx = fy + (a / 500);
+    let fz = fy - (b / 200);
+
+    function f_inv(t) {
+        if (t > delta) {
+            return Math.pow(t, 3);
+        } else {
+            return 3 * (delta ** 2) * (t - 16/116);
+        }
+    }
+
+    // 假設 Yn = 1 (相對反射率)
+    let Y = f_inv(fy);
+
+    // 轉換成百分比
+    let percent = Y * 100;
+
+
+    document.getElementById('output').innerHTML =
+        "反射率 Y = " + percent.toFixed(4) + " %";
+}
+</script>
+
+</body>
